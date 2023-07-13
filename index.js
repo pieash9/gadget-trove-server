@@ -48,6 +48,9 @@ async function run() {
       .db("gadgetTroveDb")
       .collection("products");
     const cartCollection = client.db("gadgetTroveDb").collection("carts");
+    const categoryCollection = client
+      .db("gadgetTroveDb")
+      .collection("category");
 
     //generate jwt token
     app.post("/jwt", async (req, res) => {
@@ -135,6 +138,12 @@ async function run() {
       const result = await cartCollection.deleteOne(query);
       res.send(result);
     });
+
+    //get all category
+    app.get("/category", async(req,res)=>{
+      const result = await categoryCollection.find().toArray()
+      res.send(result)
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
