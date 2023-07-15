@@ -48,6 +48,7 @@ async function run() {
       .db("gadgetTroveDb")
       .collection("products");
     const cartCollection = client.db("gadgetTroveDb").collection("carts");
+    const userCollection = client.db("gadgetTroveDb").collection("users");
     const categoryCollection = client
       .db("gadgetTroveDb")
       .collection("category");
@@ -61,14 +62,43 @@ async function run() {
       res.send(token);
     });
 
+    //post user  to server
+    app.post("/users", async (req, res) => {
+      const userInfo = req.body;
+      if (await userCollection.findOne({ email: userInfo.email })) {
+        return;
+      }
+      const result = await userCollection.insertOne(userInfo);
+      res.send(result);
+    });
+
     //get all product
     app.get("/products", async (req, res) => {
       const result = await productsCollection.find().toArray();
       res.send(result);
     });
 
+    //get product by category
+    app.get("/products/:category", async (req, res) => {
+      const category = req.params.category;
+      const result = await productsCollection
+        .find({ category: category })
+        .toArray();
+      res.send(result);
+    });
+
+    //New arrival products
+    app.get("/newProducts", async (req, res) => {
+      const result = await productsCollection
+        .find()
+        .sort({ createdDate: -1 })
+        .limit(5)
+        .toArray();
+      res.send(result);
+    });
+
     //get all carts items
-    app.get("/allCarts/:email", verifyJWT, async (req, res) => {
+    app.get("/allCarts/:email", async (req, res) => {
       const email = req.params.email;
       const query = { userEmail: email };
       const result = await cartCollection.find(query).toArray();
@@ -140,10 +170,10 @@ async function run() {
     });
 
     //get all category
-    app.get("/category", async(req,res)=>{
-      const result = await categoryCollection.find().toArray()
-      res.send(result)
-    })
+    app.get("/category", async (req, res) => {
+      const result = await categoryCollection.find().toArray();
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
