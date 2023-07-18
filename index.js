@@ -78,6 +78,17 @@ async function run() {
       res.send(result);
     });
 
+    //create new product
+    app.post("/products", verifyJWT, async (req, res) => {
+      const product = req.body;
+      const updateDoc = {
+        ...product,
+        status: "pending",
+      };
+      const result = await productsCollection.insertOne(updateDoc);
+      res.send(result);
+    });
+
     //get product by category
     app.get("/products/:category", async (req, res) => {
       const category = req.params.category;
@@ -92,7 +103,7 @@ async function run() {
       const result = await productsCollection
         .find()
         .sort({ createdDate: -1 })
-        .limit(5)
+        .limit(6)
         .toArray();
       res.send(result);
     });
