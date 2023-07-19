@@ -78,17 +78,6 @@ async function run() {
       res.send(result);
     });
 
-    //create new product
-    app.post("/products", verifyJWT, async (req, res) => {
-      const product = req.body;
-      const updateDoc = {
-        ...product,
-        status: "pending",
-      };
-      const result = await productsCollection.insertOne(updateDoc);
-      res.send(result);
-    });
-
     //get product by category
     app.get("/products/:category", async (req, res) => {
       const category = req.params.category;
@@ -113,6 +102,37 @@ async function run() {
       const email = req.params.email;
       const query = { userEmail: email };
       const result = await cartCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    //get product for a seller
+    app.get("/sellerProducts/:email", verifyJWT, async (req, res) => {
+      const email = req.params.email;
+      if (email) {
+        const query = { sellerEmail: email };
+        const result = await productsCollection.find(query).toArray();
+        res.send(result);
+      }
+    });
+
+    //create new product
+    app.post("/products", verifyJWT, async (req, res) => {
+      const product = req.body;
+      const updateDoc = {
+        ...product,
+        status: "pending",
+      };
+      const result = await productsCollection.insertOne(updateDoc);
+      res.send(result);
+    });
+
+    //update a product by a seller
+    app.patch("/products/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const product = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = { $set: { ...product, status: "pending" } };
+      const result = await productsCollection.updateOne(query, updateDoc);
       res.send(result);
     });
 
