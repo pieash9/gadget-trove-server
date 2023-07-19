@@ -62,6 +62,12 @@ async function run() {
       res.send(token);
     });
 
+    //get all users
+    app.get("/users", verifyJWT, async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.send(result);
+    });
+
     //post user  to server
     app.post("/users", async (req, res) => {
       const userInfo = req.body;
@@ -69,6 +75,24 @@ async function run() {
         return;
       }
       const result = await userCollection.insertOne(userInfo);
+      res.send(result);
+    });
+
+    //change user role
+    app.patch("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const userRole = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = { $set: userRole };
+      const result = await userCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
+
+    // delete a user
+    app.delete("/users/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
       res.send(result);
     });
 
