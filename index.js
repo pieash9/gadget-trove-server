@@ -160,6 +160,24 @@ async function run() {
       res.send(result);
     });
 
+    // update product status by admin //TODO verify admin
+    app.patch("/changeProductStatus/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const status = req.body;
+      const updateDoc = { $set: status };
+      const result = await productsCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
+
+    // delete a product
+    app.delete("/products/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await productsCollection.deleteOne(query);
+      res.send(result);
+    });
+
     //add to cart by quantity
     app.put("/carts", verifyJWT, async (req, res) => {
       const query = req.body;
