@@ -230,7 +230,7 @@ async function run() {
         updateDoc = {
           $inc: { quantity: 1 },
         };
-      } else if (itemQuantity > 0) {
+      } else if (itemQuantity > 1) {
         updateDoc = {
           $inc: { quantity: -1 },
         };
