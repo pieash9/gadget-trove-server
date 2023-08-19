@@ -2,9 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const SSLCommerzPayment = require("sslcommerz-lts");
 const jwt = require("jsonwebtoken");
 const app = express();
 const port = process.env.PORT || 5000;
+
+// ssl commerz pass and user
+const store_id = process.env.STORE_ID;
+const store_passwd = process.env.STORE_PASS;
+const is_live = false; //true for live, false for sandbox
 
 //middleware
 app.use(cors());
@@ -49,6 +55,7 @@ async function run() {
       .collection("products");
     const cartCollection = client.db("gadgetTroveDb").collection("carts");
     const userCollection = client.db("gadgetTroveDb").collection("users");
+    const orderCollection = client.db("gadgetTroveDb").collection("orders");
     const categoryCollection = client
       .db("gadgetTroveDb")
       .collection("category");
@@ -62,6 +69,136 @@ async function run() {
       res.send(token);
     });
 
+    // order payment by bkash
+    app.post("/orders", async (req, res) => {
+      const productsPrice = req.body.totalPrice;
+      const allCart = req.body.allCarts;
+      const formData = req.body.formData;
+      const tran_id = "trx" + new ObjectId();
+
+      const data = {
+        total_amount: productsPrice,
+        currency: "USD",
+        tran_id: tran_id, // use unique tran_id for each api call
+        success_url: `http://localhost:5000/payment/success/${tran_id}`,
+        fail_url: `http://localhost:5000/payment/fail/${tran_id}`,
+        cancel_url: `http://localhost:5000/payment/cancel/${tran_id}`,
+        ipn_url: "http://localhost:3030/ipn",
+        shipping_method: "Courier",
+        product_name: "Computer.",
+        product_category: "Electronic",
+        product_profile: "general",
+        cus_name: formData.name,
+        cus_email: formData.email,
+        cus_add1: formData.deliveryAddress,
+        cus_add2: "Dhaka",
+        cus_city: formData.districtName,
+        cus_state: formData.cityName,
+        cus_postcode: "1000",
+        cus_country: "Bangladesh",
+        cus_phone: formData.number,
+        cus_fax: "01711111111",
+        ship_name: formData.name,
+        ship_add1: "Dhaka",
+        ship_add2: "Dhaka",
+        ship_city: "Dhaka",
+        ship_state: "Dhaka",
+        ship_postcode: 1000,
+        ship_country: "Bangladesh",
+      };
+
+      const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+      sslcz.init(data).then((apiResponse) => {
+        // Redirect the user to payment gateway
+        let GatewayPageURL = apiResponse.GatewayPageURL;
+        res.send({ url: GatewayPageURL });
+        // console.log("Redirecting to: ", GatewayPageURL);
+      });
+
+      const finalOrder = {
+        allCart: allCart.map((item) => {
+          const { _id, ...newItem } = item; // Destructure and omit _id
+          return {
+            ...newItem, // Use the newItem object without _id
+            productID: _id, // Assign _id to productID
+            paidStatus: false,
+            tran_id: tran_id,
+          };
+        }),
+      };
+
+      // save to database
+      const singleOrder = finalOrder.allCart[0];
+      let result;
+      if (finalOrder.allCart.length > 1) {
+        // if cart length is greater than 1
+        result = await orderCollection.insertMany(finalOrder.allCart);
+      } else {
+        result = await orderCollection.insertOne(singleOrder);
+      }
+
+      //? payment success
+      app.post("/payment/success/:tran_id", async (req, res) => {
+        const tran_id = req.params.tran_id;
+        const productData = await orderCollection
+          .find({ tran_id: tran_id })
+          .toArray();
+
+        let result;
+        if (productData.length > 1) {
+          result = await orderCollection.updateMany(
+            { tran_id: tran_id },
+            { $set: { paidStatus: true } },
+            { multi: true }
+          );
+        } else {
+          result = await orderCollection.updateOne(
+            { tran_id: tran_id },
+            { $set: { paidStatus: true } }
+          );
+        }
+
+        res.redirect(`http://localhost:5173/payment/success/${tran_id}`);
+      });
+
+      //! payment fail
+      app.post("/payment/fail/:tran_id", async (req, res) => {
+        const tran_id = req.params.tran_id;
+        const productData = await orderCollection
+          .find({ tran_id: tran_id })
+          .toArray();
+
+        let result;
+        if (productData.length > 1) {
+          result = await orderCollection.deleteMany({ tran_id: tran_id });
+        } else {
+          result = await orderCollection.deleteOne({ tran_id: tran_id });
+        }
+
+        if (result.deletedCount) {
+          res.redirect(`http://localhost:5173/payment/fail/${tran_id}`);
+        }
+      });
+
+      //! payment cancel
+      app.post("/payment/cancel/:tran_id", async (req, res) => {
+        const tran_id = req.params.tran_id;
+        const productData = await orderCollection
+          .find({ tran_id: tran_id })
+          .toArray();
+
+        let result;
+        if (productData.length > 1) {
+          result = await orderCollection.deleteMany({ tran_id: tran_id });
+        } else {
+          result = await orderCollection.deleteOne({ tran_id: tran_id });
+        }
+
+        if (result.deletedCount) {
+          res.redirect(`http://localhost:5173/payment/cancel/${tran_id}`);
+        }
+      });
+    });
     //get all users
     app.get("/users", verifyJWT, async (req, res) => {
       const result = await userCollection.find().toArray();
@@ -103,7 +240,7 @@ async function run() {
     });
 
     //get product by id
-    app.get("/singleProducts/:id", async (req, res) => { 
+    app.get("/singleProducts/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await productsCollection.findOne(query);
