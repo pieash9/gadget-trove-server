@@ -1,4 +1,5 @@
 const express = require("express");
+
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
@@ -6,6 +7,7 @@ const SSLCommerzPayment = require("sslcommerz-lts");
 const jwt = require("jsonwebtoken");
 const app = express();
 const port = process.env.PORT || 5000;
+const stripe = require("stripe")(process.env.PAYMENT_SECRET_KEY);
 
 // ssl commerz pass and user
 const store_id = process.env.STORE_ID;
@@ -69,7 +71,63 @@ async function run() {
       res.send(token);
     });
 
-    // order payment by bkash
+    // stripe payment generate client secret
+    app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+      try {
+        const { price } = req.body;
+        if (price) {
+          const amount = parseFloat(price) * 100;
+          const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: "usd",
+            payment_method_types: ["card"],
+          });
+          res.send({
+            clientSecret: paymentIntent.client_secret,
+          });
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    });
+
+    app.post("/orders/stripe", verifyJWT, async (req, res) => {
+      const allCart = req.body.allCarts;
+      const formData = req.body.formData;
+      const tran_id = req.body.tran_id;
+      const createdAt = req.body.createdAt;
+
+      const finalOrder = {
+        allCart: allCart.map((item) => {
+          const { _id, ...newItem } = item; // Destructure and omit _id
+          return {
+            ...newItem, // Use the newItem object without _id
+            productID: _id, // Assign _id to productID
+            paidStatus: false,
+            tran_id: tran_id,
+            createdAt,
+            cusName: formData.name,
+            deliveryAddress: formData.deliveryAddress,
+            number: formData.number,
+            districtName: formData.districtName,
+            cityName: formData.cityName,
+            cus_email: formData.email,
+          };
+        }),
+      };
+      // save to database
+      const singleOrder = finalOrder.allCart[0];
+
+      if (finalOrder.allCart.length > 1) {
+        // if cart length is greater than 1
+        await orderCollection.insertMany(finalOrder.allCart);
+      } else {
+        await orderCollection.insertOne(singleOrder);
+      }
+      res.redirect(`http://localhost:5173/payment/success/${tran_id}`);
+    });
+
+    // order payment by SSLCOMMERZ
     app.post("/orders", async (req, res) => {
       const productsPrice = req.body.totalPrice;
       const allCart = req.body.allCarts;
@@ -122,19 +180,26 @@ async function run() {
             ...newItem, // Use the newItem object without _id
             productID: _id, // Assign _id to productID
             paidStatus: false,
+            createdAt: new Date(),
             tran_id: tran_id,
+            cusName: formData.name,
+            deliveryAddress: formData.deliveryAddress,
+            number: formData.number,
+            districtName: formData.districtName,
+            cityName: formData.cityName,
+            cus_email: formData.email,
           };
         }),
       };
 
       // save to database
       const singleOrder = finalOrder.allCart[0];
-      let result;
+
       if (finalOrder.allCart.length > 1) {
         // if cart length is greater than 1
-        result = await orderCollection.insertMany(finalOrder.allCart);
+        await orderCollection.insertMany(finalOrder.allCart);
       } else {
-        result = await orderCollection.insertOne(singleOrder);
+        await orderCollection.insertOne(singleOrder);
       }
 
       //? payment success
@@ -144,20 +209,18 @@ async function run() {
           .find({ tran_id: tran_id })
           .toArray();
 
-        let result;
         if (productData.length > 1) {
-          result = await orderCollection.updateMany(
+          await orderCollection.updateMany(
             { tran_id: tran_id },
             { $set: { paidStatus: true } },
             { multi: true }
           );
         } else {
-          result = await orderCollection.updateOne(
+          await orderCollection.updateOne(
             { tran_id: tran_id },
             { $set: { paidStatus: true } }
           );
         }
-
         res.redirect(`http://localhost:5173/payment/success/${tran_id}`);
       });
 
